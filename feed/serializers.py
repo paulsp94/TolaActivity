@@ -594,6 +594,14 @@ class SectorRelatedSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class SectorRecommendationSerializer(serializers.ModelSerializer):
+    id = serializers.ReadOnlyField()
+
+    class Meta:
+        model = SectorRelated
+        fields = '__all__'
+
+
 class WorkflowLevel1SectorSerializer(serializers.ModelSerializer):
     id = serializers.ReadOnlyField()
 

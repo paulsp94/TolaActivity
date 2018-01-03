@@ -81,6 +81,7 @@ router.register(r'landtype', LandTypeViewSet)
 router.register(r'internationalization', InternationalizationViewSet)
 router.register(r'portfolio', PortfolioViewSet)
 router.register(r'sectorrelated', SectorRelatedViewSet)
+router.register(r'sectorrecommendations', SectorRecommendationViewSet)
 router.register(r'pindicators', ProgramIndicatorReadOnlyViewSet, base_name='pindicators')
 
 # router.register(r'search', SearchView, base_name='search')

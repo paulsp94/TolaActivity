@@ -1,3 +1,7 @@
+import operator
+from collections import Counter
+from functools import reduce
+
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
@@ -5,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
 from rest_framework import viewsets
+from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
@@ -77,6 +82,7 @@ class WorkflowLevel1ViewSet(viewsets.ModelViewSet):
     search by country name and workflowlevel1 name
     limit to users logged in country permissions
     """
+
     # Remove CSRF request verification for posts to this API
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs):
@@ -121,8 +127,17 @@ class WorkflowLevel1ViewSet(viewsets.ModelViewSet):
         organization_id = TolaUser.objects. \
             values_list('organization_id', flat=True). \
             get(user=self.request.user)
+        import pdb;
+        pdb.set_trace()
         obj = serializer.save(organization_id=organization_id)
         obj.user_access.add(self.request.user.tola_user)
+
+    def update(self, request, *args, **kwargs):
+        if (request.data.get('sector') != None):
+            sector = request.data.get('sector')
+            map(lambda x: x._update_sector_count(sector), self.sector)
+
+        return super().update(request, *args, **kwargs)
 
     def destroy(self, request, pk):
         workflowlevel1 = self.get_object()
@@ -210,6 +225,7 @@ class SiteProfileViewSet(viewsets.ModelViewSet):
     Search by country name and program name
     limit to users logged in country permissions
     """
+
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
@@ -253,6 +269,7 @@ class IndicatorViewSet(viewsets.ModelViewSet):
     Search by country name and program name
     limit to users logged in country permissions
     """
+
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
@@ -301,9 +318,9 @@ class FrequencyViewSet(viewsets.ModelViewSet):
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
-        organization_id = TolaUser.objects.\
-                values_list('organization_id', flat=True).\
-                get(user=request.user)
+        organization_id = TolaUser.objects. \
+            values_list('organization_id', flat=True). \
+            get(user=request.user)
         queryset = queryset.filter(organization_id=organization_id)
         serializer = FrequencySerializer(instance=queryset,
                                          context={'request': request},
@@ -320,12 +337,13 @@ class TolaUserViewSet(viewsets.ModelViewSet):
     A ViewSet for listing or retrieving TolaUsers.
 
     """
+
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
         if not request.user.is_superuser:
-            organization_id = TolaUser.objects.\
-                values_list('organization_id', flat=True).\
+            organization_id = TolaUser.objects. \
+                values_list('organization_id', flat=True). \
                 get(user=request.user)
             queryset = queryset.filter(organization_id=organization_id)
         serializer = TolaUserSerializer(
@@ -355,8 +373,8 @@ class IndicatorTypeViewSet(viewsets.ModelViewSet):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
         if not request.user.is_superuser:
-            organization_id = TolaUser.objects.\
-                values_list('organization_id', flat=True).\
+            organization_id = TolaUser.objects. \
+                values_list('organization_id', flat=True). \
                 get(user=request.user)
             queryset = queryset.filter(organization_id=organization_id)
         serializer = self.get_serializer(queryset, many=True)
@@ -478,6 +496,7 @@ class StakeholderViewSet(viewsets.ModelViewSet):
     This viewset automatically provides `list`, `create`, `retrieve`,
     `update` and `destroy` actions.
     """
+
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
@@ -712,7 +731,6 @@ class DocumentationViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def perform_create(self, serializer):
-
         serializer.save(created_by=self.request.user)
 
     filter_fields = ('workflowlevel1__country__country',
@@ -862,6 +880,7 @@ class WorkflowLevel2ViewSet(viewsets.ModelViewSet):
     Search by country name and program name
     limit to users logged in country permissions
     """
+
     # Remove CSRF request verification for posts to this API
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs):
@@ -1255,6 +1274,7 @@ class WorkflowTeamViewSet(viewsets.ModelViewSet):
     This viewset provides `list`, `create`, `retrieve`, `update` and
     `destroy` actions.
     """
+
     def list(self, request):
         # Use this queryset or the django-filters lib will not work
         queryset = self.filter_queryset(self.get_queryset())
@@ -1333,15 +1353,37 @@ class PortfolioViewSet(viewsets.ModelViewSet):
 
 
 class SectorRelatedViewSet(viewsets.ModelViewSet):
-
     filter_fields = ('sector', 'organization__id',)
     filter_backends = (django_filters.rest_framework.DjangoFilterBackend,)
     queryset = SectorRelated.objects.all()
     serializer_class = SectorRelatedSerializer
 
 
-class WorkflowLevel1SectorViewSet(viewsets.ModelViewSet):
+class SectorRecommendationViewSet(viewsets.ModelViewSet):
+    # give the best fits back (~5)
+    def list(self, request, *args, **kwargs):
+        n = 5
 
+        queryset = self.filter_queryset(self.get_queryset())
+
+        map(lambda x: x.sector, queryset)
+        map(lambda x: x.prob_sectors, queryset)
+
+        queryset = reduce(lambda x, y: Counter(x) + Counter(y), queryset)
+        queryset = sorted(queryset.items(), key=operator.itemgetter(1))
+
+        queryset = {k: queryset[k] for k in list(queryset)[:n]}
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    filter_fields = ('workflowlevel1')
+    filter_backends = (django_filters.rest_framework.DjangoFilterBackend,)
+    queryset = WorkflowLevel1.objects.all()
+    serializer_class = SectorRecommendationSerializer
+
+
+class WorkflowLevel1SectorViewSet(viewsets.ModelViewSet):
     queryset = WorkflowLevel1Sector.objects.all()
     filter_fields = ('sector', 'workflowlevel1',)
     filter_backends = (django_filters.rest_framework.DjangoFilterBackend,)

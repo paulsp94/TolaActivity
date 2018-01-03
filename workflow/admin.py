@@ -5,6 +5,7 @@ from import_export.admin import ImportExportModelAdmin, ExportMixin
 from tola.util import getCountry
 from admin_report.mixins import ChartReportAdmin
 from simple_history.admin import SimpleHistoryAdmin
+from django.contrib import admin
 
 
 # Resource for CSV export

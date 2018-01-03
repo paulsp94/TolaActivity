@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 
 from django.db import models
-from django.contrib import admin
+from django.contrib.postgres.fields import ArrayField
 from django.contrib.auth.models import User, Group
 from django.contrib.sites.models import Site
 from django.utils import timezone
@@ -13,6 +13,7 @@ from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from rest_framework.authtoken.models import Token
+from rest_framework.fields import DictField
 from simple_history.models import HistoricalRecords
 from django.contrib.postgres.fields import JSONField
 from django.contrib.sessions.models import Session
@@ -20,6 +21,7 @@ from django.contrib.sessions.models import Session
 from django.db import migrations
 import requests
 import json
+
 from search.utils import ElasticsearchIndexer
 
 try:
@@ -102,15 +104,44 @@ class Sector(models.Model):
     create_date = models.DateTimeField(null=True, blank=True)
     edit_date = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey('auth.User', related_name='sectors', null=True, blank=True)
+    # For Sector Recommendation
+    prob_sectors = DictField(models.FloatField)
+    count_sectors = DictField(models.IntegerField)
 
     class Meta:
         ordering = ('sector',)
+
+    def _initialize_sector_recommendations(self):
+        self.prob_sectors = {(sector.id, 0) for sector in self.__class__.objects.all()}
+        self.count_sectors = {(sector.id, 0) for sector in self.__class__.objects.all()}
+
+    def _update_sector_count(self, sector):
+        self.count_sectors[sector] += 1
+
+    def _generate_count(self):
+        wl1 = WorkflowLevel1.objects.all()
+
+        map(lambda x: x.sector, wl1)
+
+        wl1 = list(filter(lambda x: x.contains(self.sector), wl1))
+        wl1 = list(filter(lambda x: x != self.sector, wl1.flatten()))
+
+        self.count_sectors = {(k, wl1.count(k)) for k in self.count_sectors.keys()}
+
+    def _update_sector_probabilities(self):
+        total = sum(self.count_sectors.values())
+        self.prob_sectors = {(k, v / total) for k, v in self.count_sectors.item()}
 
     # on save add create date or update edit date
     def save(self, *args, **kwargs):
         if self.create_date == None:
             self.create_date = timezone.now()
         self.edit_date = timezone.now()
+        if self._state.adding:
+            self._initialize_sector_recommendations()
+        else:
+            self._update_sector_count()
+        self._update_sector_probabilities()
         super(Sector, self).save()
 
     # displayed in admin templates
